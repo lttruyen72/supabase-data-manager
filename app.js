@@ -788,14 +788,41 @@ function handleImportFile(file) {
           alert('Lỗi phân tích file CSV: ' + err.message);
         }
       });
-    } else if (extension === 'json') {
+    } else if (extension === 'json' || extension === 'geojson') {
       try {
         const parsed = JSON.parse(content);
-        const dataArray = Array.isArray(parsed) ? parsed : [parsed];
-        const fields = Object.keys(dataArray[0] || {});
+        let dataArray = [];
+        
+        if (parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+          dataArray = parsed.features.map(f => {
+            const row = { ...f.properties };
+            if (f.geometry) {
+              row['geometry'] = f.geometry;
+              row['geom'] = f.geometry;
+            }
+            return row;
+          });
+        } else if (parsed.type === 'Feature') {
+          const row = { ...parsed.properties };
+          if (parsed.geometry) {
+            row['geometry'] = parsed.geometry;
+            row['geom'] = parsed.geometry;
+          }
+          dataArray = [row];
+        } else {
+          dataArray = Array.isArray(parsed) ? parsed : [parsed];
+        }
+
+        const fields = [];
+        dataArray.forEach(item => {
+          Object.keys(item).forEach(key => {
+            if (!fields.includes(key)) fields.push(key);
+          });
+        });
+
         setupImportMapping(dataArray, fields);
       } catch (err) {
-        alert('Lỗi phân tích file JSON: ' + err.message);
+        alert(`Lỗi phân tích file ${extension.toUpperCase()}: ` + err.message);
       }
     }
   };
