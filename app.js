@@ -887,6 +887,21 @@ const newTableColumnsContainer = document.getElementById('new-table-columns');
 const addColumnFieldBtn = document.getElementById('add-column-field-btn');
 const createTableStatus = document.getElementById('create-table-status');
 
+// New File Tab Elements
+const tabCreateManual = document.getElementById('tab-create-manual');
+const tabCreateFile = document.getElementById('tab-create-file');
+const createManualSection = document.getElementById('create-manual-section');
+const createFileSection = document.getElementById('create-file-section');
+const createDropzone = document.getElementById('create-dropzone');
+const createFileInput = document.getElementById('create-file-input');
+const createFileSetup = document.getElementById('create-file-setup');
+const newTableFileName = document.getElementById('new-table-file-name');
+const newTableFileColumns = document.getElementById('new-table-file-columns');
+
+let currentCreateMode = 'manual'; // 'manual' or 'file'
+let parsedCreateFileData = null;
+let parsedCreateFileColumns = []; // [{ name, type, originalName }]
+
 // Columns metadata
 const sqlDataTypes = [
   { value: 'text', label: 'text (Chuỗi văn bản)' },
@@ -897,6 +912,25 @@ const sqlDataTypes = [
   { value: 'jsonb', label: 'jsonb (Dữ liệu JSON)' },
   { value: 'geometry(Geometry, 4326)', label: 'geometry (Tọa độ GIS - PostGIS)' }
 ];
+
+// Tab Switching
+tabCreateManual.addEventListener('click', () => switchCreateTab('manual'));
+tabCreateFile.addEventListener('click', () => switchCreateTab('file'));
+
+function switchCreateTab(mode) {
+  currentCreateMode = mode;
+  if (mode === 'manual') {
+    tabCreateManual.className = "px-4 py-2 text-sm font-semibold border-b-2 border-brand text-brand transition-all";
+    tabCreateFile.className = "px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-all";
+    createManualSection.classList.remove('hidden');
+    createFileSection.classList.add('hidden');
+  } else {
+    tabCreateManual.className = "px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition-all";
+    tabCreateFile.className = "px-4 py-2 text-sm font-semibold border-b-2 border-brand text-brand transition-all";
+    createManualSection.classList.add('hidden');
+    createFileSection.classList.remove('hidden');
+  }
+}
 
 createTableBtn.addEventListener('click', () => {
   if (!supabaseClient) {
@@ -910,18 +944,17 @@ createTableBtn.addEventListener('click', () => {
 closeCreateTableModalBtn.addEventListener('click', () => createTableModal.classList.add('hidden'));
 cancelCreateTableBtn.addEventListener('click', () => createTableModal.classList.add('hidden'));
 
+// Manual columns list actions
 addColumnFieldBtn.addEventListener('click', () => {
   const colDiv = document.createElement('div');
   colDiv.className = 'flex items-center gap-2 bg-zinc-900/40 p-2.5 rounded-lg border border-zinc-800/80 column-entry animate-fade-in';
   
-  // Col name input
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.placeholder = 'Tên cột (ví dụ: title, price)';
   nameInput.className = 'w-1/4 custom-input px-3 py-1.5 text-xs col-name-input';
   nameInput.required = true;
 
-  // Col type select
   const typeSelect = document.createElement('select');
   typeSelect.className = 'w-1/4 custom-input px-3 py-1.5 text-xs col-type-select';
   sqlDataTypes.forEach(t => {
@@ -931,7 +964,6 @@ addColumnFieldBtn.addEventListener('click', () => {
     typeSelect.appendChild(opt);
   });
 
-  // Primary key checkbox
   const pkLabel = document.createElement('label');
   pkLabel.className = 'flex items-center gap-1.5 text-xs text-zinc-400 w-1/4';
   const pkCheck = document.createElement('input');
@@ -942,7 +974,6 @@ addColumnFieldBtn.addEventListener('click', () => {
   pkSpan.textContent = 'Khóa chính';
   pkLabel.appendChild(pkSpan);
 
-  // Not null checkbox
   const nnLabel = document.createElement('label');
   nnLabel.className = 'flex items-center gap-1.5 text-xs text-zinc-400 w-1/4';
   const nnCheck = document.createElement('input');
@@ -953,14 +984,11 @@ addColumnFieldBtn.addEventListener('click', () => {
   nnSpan.textContent = 'Bắt buộc';
   nnLabel.appendChild(nnSpan);
 
-  // Remove btn
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.className = 'p-1.5 hover:text-red-400 text-zinc-500 transition-colors';
   removeBtn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
-  removeBtn.addEventListener('click', () => {
-    colDiv.remove();
-  });
+  removeBtn.addEventListener('click', () => colDiv.remove());
 
   colDiv.appendChild(nameInput);
   colDiv.appendChild(typeSelect);
@@ -972,76 +1000,312 @@ addColumnFieldBtn.addEventListener('click', () => {
   refreshIcons();
 });
 
+// File Tab Actions
+createDropzone.addEventListener('click', () => createFileInput.click());
+createDropzone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  createDropzone.classList.add('border-brand', 'bg-brand/5');
+});
+createDropzone.addEventListener('dragleave', () => {
+  createDropzone.classList.remove('border-brand', 'bg-brand/5');
+});
+createDropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  createDropzone.classList.remove('border-brand', 'bg-brand/5');
+  if (e.dataTransfer.files.length > 0) {
+    handleCreateFile(e.dataTransfer.files[0]);
+  }
+});
+createFileInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) {
+    handleCreateFile(e.target.files[0]);
+  }
+});
+
+function handleCreateFile(file) {
+  const extension = file.name.split('.').pop().toLowerCase();
+  const rawName = file.name.replace(/\.[^/.]+$/, "").toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  newTableFileName.value = rawName;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const content = e.target.result;
+    
+    if (extension === 'csv') {
+      Papa.parse(content, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          analyzeFileData(results.data, results.meta.fields);
+        },
+        error: function(err) {
+          alert('Lỗi đọc file CSV: ' + err.message);
+        }
+      });
+    } else if (extension === 'json' || extension === 'geojson') {
+      try {
+        const parsed = JSON.parse(content);
+        let dataArray = [];
+        
+        if (parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+          dataArray = parsed.features.map(f => {
+            const row = { ...f.properties };
+            if (f.geometry) {
+              row['geometry'] = f.geometry;
+              row['geom'] = f.geometry;
+            }
+            return row;
+          });
+        } else if (parsed.type === 'Feature') {
+          const row = { ...parsed.properties };
+          if (parsed.geometry) {
+            row['geometry'] = parsed.geometry;
+            row['geom'] = parsed.geometry;
+          }
+          dataArray = [row];
+        } else {
+          dataArray = Array.isArray(parsed) ? parsed : [parsed];
+        }
+
+        const fields = [];
+        dataArray.forEach(item => {
+          Object.keys(item).forEach(key => {
+            if (!fields.includes(key)) fields.push(key);
+          });
+        });
+
+        analyzeFileData(dataArray, fields);
+      } catch (err) {
+        alert('Lỗi đọc file JSON: ' + err.message);
+      }
+    }
+  };
+  reader.readAsText(file);
+}
+
+function inferDataType(sampleValue, columnName) {
+  if (columnName.toLowerCase() === 'geom' || columnName.toLowerCase() === 'geometry') {
+    return 'geometry(Geometry, 4326)';
+  }
+  if (sampleValue === null || sampleValue === undefined) return 'text';
+  if (typeof sampleValue === 'boolean') return 'boolean';
+  if (typeof sampleValue === 'number') {
+    return Number.isInteger(sampleValue) ? 'integer' : 'numeric';
+  }
+  if (typeof sampleValue === 'object') return 'jsonb';
+  // Check date string
+  if (typeof sampleValue === 'string' && !isNaN(Date.parse(sampleValue)) && sampleValue.includes('-')) {
+    return 'timestamp with time zone';
+  }
+  return 'text';
+}
+
+function analyzeFileData(data, fields) {
+  parsedCreateFileData = data;
+  createDropzone.classList.add('hidden');
+  createFileSetup.classList.remove('hidden');
+
+  newTableFileColumns.innerHTML = '';
+  parsedCreateFileColumns = [];
+
+  // Inspect first 5 rows to guess types
+  const sampleRows = data.slice(0, 5);
+
+  fields.forEach(field => {
+    // Find first non-null sample
+    let sampleVal = null;
+    for (let r of sampleRows) {
+      if (r[field] !== null && r[field] !== undefined && r[field] !== '') {
+        sampleVal = r[field];
+        break;
+      }
+    }
+
+    const inferredType = inferDataType(sampleVal, field);
+    const sanitizedName = field.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+
+    const colRow = document.createElement('div');
+    colRow.className = 'flex items-center gap-2 bg-zinc-900/40 p-2.5 rounded-lg border border-zinc-800/80 file-column-entry';
+    
+    // Checkbox to include/exclude
+    const activeCheck = document.createElement('input');
+    activeCheck.type = 'checkbox';
+    activeCheck.checked = true;
+    activeCheck.className = 'rounded bg-zinc-800 border-zinc-700 text-brand focus:ring-brand h-4 w-4 col-file-active';
+    
+    // Label original field name
+    const originalLabel = document.createElement('span');
+    originalLabel.className = 'text-xs text-zinc-500 w-1/4 truncate';
+    originalLabel.textContent = field;
+    originalLabel.title = `Tên gốc: ${field}`;
+
+    // Target Column Name
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = sanitizedName;
+    nameInput.className = 'w-1/4 custom-input px-3 py-1.5 text-xs col-file-name-input';
+
+    // Target Column Type
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'w-1/3 custom-input px-3 py-1.5 text-xs col-file-type-select';
+    sqlDataTypes.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.value;
+      opt.textContent = t.label;
+      if (t.value === inferredType) opt.selected = true;
+      typeSelect.appendChild(opt);
+    });
+
+    colRow.appendChild(activeCheck);
+    colRow.appendChild(originalLabel);
+    colRow.appendChild(nameInput);
+    colRow.appendChild(typeSelect);
+
+    // Keep hidden reference to original name
+    colRow.dataset.originalField = field;
+
+    newTableFileColumns.appendChild(colRow);
+  });
+}
+
 function resetCreateTableForm() {
+  switchCreateTab('manual');
   newTableNameInput.value = '';
   createTableStatus.className = 'text-xs text-zinc-400';
   createTableStatus.textContent = 'Thiết lập cấu trúc bảng để bắt đầu.';
   
-  // Remove all added columns, keep only the default id primary key row
+  // Reset manual columns list
   const addedCols = newTableColumnsContainer.querySelectorAll('.column-entry');
   addedCols.forEach(col => col.remove());
+
+  // Reset file upload section
+  parsedCreateFileData = null;
+  parsedCreateFileColumns = [];
+  createFileInput.value = '';
+  createDropzone.classList.remove('hidden');
+  createFileSetup.classList.add('hidden');
+  newTableFileColumns.innerHTML = '';
 }
 
 confirmCreateTableBtn.addEventListener('click', async () => {
-  const tableName = newTableNameInput.value.trim().toLowerCase();
+  const tableName = currentCreateMode === 'manual' 
+    ? newTableNameInput.value.trim().toLowerCase()
+    : newTableFileName.value.trim().toLowerCase();
+
   if (!tableName) {
     alert('Vui lòng nhập tên bảng.');
     return;
   }
 
-  // Build columns SQL
-  const columnEntries = newTableColumnsContainer.querySelectorAll('.column-entry');
-  const columnsSqlParts = ['"id" serial PRIMARY KEY'];
+  let query = '';
+  let activeMapping = []; // Array of { fileField, dbField }
 
-  let hasError = false;
-  columnEntries.forEach(entry => {
-    const name = entry.querySelector('.col-name-input').value.trim().toLowerCase();
-    const type = entry.querySelector('.col-type-select').value;
-    const isPk = entry.querySelector('.col-pk-check').checked;
-    const isNn = entry.querySelector('.col-nn-check').checked;
+  if (currentCreateMode === 'manual') {
+    const columnEntries = newTableColumnsContainer.querySelectorAll('.column-entry');
+    const columnsSqlParts = ['"id" serial PRIMARY KEY'];
+    let hasError = false;
 
-    if (!name) {
-      hasError = true;
+    columnEntries.forEach(entry => {
+      const name = entry.querySelector('.col-name-input').value.trim().toLowerCase();
+      const type = entry.querySelector('.col-type-select').value;
+      const isPk = entry.querySelector('.col-pk-check').checked;
+      const isNn = entry.querySelector('.col-nn-check').checked;
+
+      if (!name) {
+        hasError = true;
+        return;
+      }
+
+      let colDef = `"${name}" ${type}`;
+      if (isPk) colDef += ' PRIMARY KEY';
+      if (isNn) colDef += ' NOT NULL';
+      columnsSqlParts.push(colDef);
+    });
+
+    if (hasError) {
+      alert('Vui lòng nhập đầy đủ tên cho các cột.');
       return;
     }
 
-    let colDef = `"${name}" ${type}`;
-    if (isPk) colDef += ' PRIMARY KEY';
-    if (isNn) colDef += ' NOT NULL';
-    columnsSqlParts.push(colDef);
-  });
+    query = `CREATE TABLE public."${tableName}" (\n  ${columnsSqlParts.join(',\n  ')}\n);`;
+  } else {
+    // Mode 'file'
+    if (!parsedCreateFileData) {
+      alert('Vui lòng chọn file dữ liệu trước.');
+      return;
+    }
 
-  if (hasError) {
-    alert('Vui lòng nhập đầy đủ tên cho các cột bổ sung.');
-    return;
+    const fileColEntries = newTableFileColumns.querySelectorAll('.file-column-entry');
+    const columnsSqlParts = ['"id" serial PRIMARY KEY'];
+
+    fileColEntries.forEach(entry => {
+      const isActive = entry.querySelector('.col-file-active').checked;
+      const originalField = entry.dataset.originalField;
+      const dbColName = entry.querySelector('.col-file-name-input').value.trim().toLowerCase();
+      const dbColType = entry.querySelector('.col-file-type-select').value;
+
+      if (isActive && dbColName) {
+        columnsSqlParts.push(`"${dbColName}" ${dbColType}`);
+        activeMapping.push({ fileField: originalField, dbField: dbColName });
+      }
+    });
+
+    query = `CREATE TABLE public."${tableName}" (\n  ${columnsSqlParts.join(',\n  ')}\n);`;
   }
 
-  const query = `CREATE TABLE public."${tableName}" (\n  ${columnsSqlParts.join(',\n  ')}\n);`;
-
   confirmCreateTableBtn.disabled = true;
-  confirmCreateTableBtn.textContent = 'Đang tạo...';
-  createTableStatus.textContent = 'Đang gửi lệnh tạo bảng...';
+  confirmCreateTableBtn.textContent = 'Đang thực hiện...';
+  createTableStatus.textContent = 'Đang tạo bảng trên Supabase...';
 
   try {
-    const { data, error } = await supabaseClient.rpc('exec_sql', { sql: query });
+    // 1. Execute SQL CREATE TABLE
+    const { error: createError } = await supabaseClient.rpc('exec_sql', { sql: query });
     
-    if (error) {
-      if (error.message.includes('function rpc.exec_sql does not exist')) {
-        throw new Error("RPC 'exec_sql' chưa được cấu hình trên Supabase. Vui lòng mở SQL Editor trong Supabase và chạy câu lệnh tạo hàm này trước (Xem hướng dẫn trong SQL Editor trên Dashboard này).");
+    if (createError) {
+      if (createError.message.includes('function rpc.exec_sql does not exist')) {
+        throw new Error("RPC 'exec_sql' chưa được cấu hình. Vui lòng xem hướng dẫn cài đặt trong cửa sổ SQL Editor.");
       }
-      throw error;
+      throw createError;
+    }
+
+    // 2. If file mode, insert rows!
+    if (currentCreateMode === 'file' && activeMapping.length > 0) {
+      createTableStatus.textContent = 'Bảng đã được tạo. Đang import dữ liệu...';
+      
+      const rowsToInsert = parsedCreateFileData.map(fileRow => {
+        const dbRow = {};
+        activeMapping.forEach(mapping => {
+          let val = fileRow[mapping.fileField];
+          if (val === '' || val === undefined) {
+            val = null;
+          }
+          dbRow[mapping.dbField] = val;
+        });
+        return dbRow;
+      });
+
+      // Insert in chunks of 100
+      const chunkSize = 100;
+      for (let i = 0; i < rowsToInsert.length; i += chunkSize) {
+        const chunk = rowsToInsert.slice(i, i + chunkSize);
+        createTableStatus.textContent = `Đang import dữ liệu (${i}/${rowsToInsert.length} dòng)...`;
+        const { error: insertError } = await supabaseClient.from(tableName).insert(chunk);
+        if (insertError) throw insertError;
+      }
     }
 
     createTableStatus.className = 'text-xs text-emerald-400';
-    createTableStatus.textContent = 'Tạo bảng thành công! Đang tải lại danh sách...';
+    createTableStatus.textContent = currentCreateMode === 'file' 
+      ? `Thành công! Đã tạo bảng và import ${parsedCreateFileData.length} dòng.`
+      : 'Tạo bảng thành công! Đang tải lại danh sách...';
 
-    // Wait a brief moment, then refresh list of tables
+    // Refresh tables list
     setTimeout(async () => {
       createTableModal.classList.add('hidden');
       confirmCreateTableBtn.disabled = false;
       confirmCreateTableBtn.textContent = 'Tạo bảng';
       
-      // Re-fetch OpenAPI schema to list tables
       const restEndpoint = `${currentUrl.replace(/\/$/, '')}/rest/v1/`;
       const res = await fetch(restEndpoint, {
         headers: {
@@ -1060,6 +1324,6 @@ confirmCreateTableBtn.addEventListener('click', async () => {
     createTableStatus.className = 'text-xs text-red-400';
     createTableStatus.textContent = `Lỗi: ${err.message}`;
     confirmCreateTableBtn.disabled = false;
-    confirmCreateTableBtn.textContent = 'Tạo bảng';
+    confirmCreateTableBtn.textContent = 'Thực hiện';
   }
 });
