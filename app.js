@@ -875,3 +875,191 @@ function setupImportMapping(data, fields) {
     mappingList.appendChild(row);
   });
 }
+
+// Create Table Feature
+const createTableModal = document.getElementById('create-table-modal');
+const createTableBtn = document.getElementById('create-table-btn');
+const closeCreateTableModalBtn = document.getElementById('close-create-table-modal');
+const cancelCreateTableBtn = document.getElementById('cancel-create-table-btn');
+const confirmCreateTableBtn = document.getElementById('confirm-create-table-btn');
+const newTableNameInput = document.getElementById('new-table-name');
+const newTableColumnsContainer = document.getElementById('new-table-columns');
+const addColumnFieldBtn = document.getElementById('add-column-field-btn');
+const createTableStatus = document.getElementById('create-table-status');
+
+// Columns metadata
+const sqlDataTypes = [
+  { value: 'text', label: 'text (Chuỗi văn bản)' },
+  { value: 'integer', label: 'integer (Số nguyên)' },
+  { value: 'numeric', label: 'numeric (Số thập phân)' },
+  { value: 'boolean', label: 'boolean (Đúng / Sai)' },
+  { value: 'timestamp with time zone', label: 'timestamptz (Ngày giờ)' },
+  { value: 'jsonb', label: 'jsonb (Dữ liệu JSON)' },
+  { value: 'geometry(Geometry, 4326)', label: 'geometry (Tọa độ GIS - PostGIS)' }
+];
+
+createTableBtn.addEventListener('click', () => {
+  if (!supabaseClient) {
+    alert('Vui lòng kết nối dự án Supabase trước!');
+    return;
+  }
+  createTableModal.classList.remove('hidden');
+  resetCreateTableForm();
+});
+
+closeCreateTableModalBtn.addEventListener('click', () => createTableModal.classList.add('hidden'));
+cancelCreateTableBtn.addEventListener('click', () => createTableModal.classList.add('hidden'));
+
+addColumnFieldBtn.addEventListener('click', () => {
+  const colDiv = document.createElement('div');
+  colDiv.className = 'flex items-center gap-2 bg-zinc-900/40 p-2.5 rounded-lg border border-zinc-800/80 column-entry animate-fade-in';
+  
+  // Col name input
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Tên cột (ví dụ: title, price)';
+  nameInput.className = 'w-1/4 custom-input px-3 py-1.5 text-xs col-name-input';
+  nameInput.required = true;
+
+  // Col type select
+  const typeSelect = document.createElement('select');
+  typeSelect.className = 'w-1/4 custom-input px-3 py-1.5 text-xs col-type-select';
+  sqlDataTypes.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.value;
+    opt.textContent = t.label;
+    typeSelect.appendChild(opt);
+  });
+
+  // Primary key checkbox
+  const pkLabel = document.createElement('label');
+  pkLabel.className = 'flex items-center gap-1.5 text-xs text-zinc-400 w-1/4';
+  const pkCheck = document.createElement('input');
+  pkCheck.type = 'checkbox';
+  pkCheck.className = 'rounded bg-zinc-800 border-zinc-700 text-brand focus:ring-brand h-4 w-4 col-pk-check';
+  pkLabel.appendChild(pkCheck);
+  const pkSpan = document.createElement('span');
+  pkSpan.textContent = 'Khóa chính';
+  pkLabel.appendChild(pkSpan);
+
+  // Not null checkbox
+  const nnLabel = document.createElement('label');
+  nnLabel.className = 'flex items-center gap-1.5 text-xs text-zinc-400 w-1/4';
+  const nnCheck = document.createElement('input');
+  nnCheck.type = 'checkbox';
+  nnCheck.className = 'rounded bg-zinc-800 border-zinc-700 text-brand focus:ring-brand h-4 w-4 col-nn-check';
+  nnLabel.appendChild(nnCheck);
+  const nnSpan = document.createElement('span');
+  nnSpan.textContent = 'Bắt buộc';
+  nnLabel.appendChild(nnSpan);
+
+  // Remove btn
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'p-1.5 hover:text-red-400 text-zinc-500 transition-colors';
+  removeBtn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
+  removeBtn.addEventListener('click', () => {
+    colDiv.remove();
+  });
+
+  colDiv.appendChild(nameInput);
+  colDiv.appendChild(typeSelect);
+  colDiv.appendChild(pkLabel);
+  colDiv.appendChild(nnLabel);
+  colDiv.appendChild(removeBtn);
+  
+  newTableColumnsContainer.appendChild(colDiv);
+  refreshIcons();
+});
+
+function resetCreateTableForm() {
+  newTableNameInput.value = '';
+  createTableStatus.className = 'text-xs text-zinc-400';
+  createTableStatus.textContent = 'Thiết lập cấu trúc bảng để bắt đầu.';
+  
+  // Remove all added columns, keep only the default id primary key row
+  const addedCols = newTableColumnsContainer.querySelectorAll('.column-entry');
+  addedCols.forEach(col => col.remove());
+}
+
+confirmCreateTableBtn.addEventListener('click', async () => {
+  const tableName = newTableNameInput.value.trim().toLowerCase();
+  if (!tableName) {
+    alert('Vui lòng nhập tên bảng.');
+    return;
+  }
+
+  // Build columns SQL
+  const columnEntries = newTableColumnsContainer.querySelectorAll('.column-entry');
+  const columnsSqlParts = ['"id" serial PRIMARY KEY'];
+
+  let hasError = false;
+  columnEntries.forEach(entry => {
+    const name = entry.querySelector('.col-name-input').value.trim().toLowerCase();
+    const type = entry.querySelector('.col-type-select').value;
+    const isPk = entry.querySelector('.col-pk-check').checked;
+    const isNn = entry.querySelector('.col-nn-check').checked;
+
+    if (!name) {
+      hasError = true;
+      return;
+    }
+
+    let colDef = `"${name}" ${type}`;
+    if (isPk) colDef += ' PRIMARY KEY';
+    if (isNn) colDef += ' NOT NULL';
+    columnsSqlParts.push(colDef);
+  });
+
+  if (hasError) {
+    alert('Vui lòng nhập đầy đủ tên cho các cột bổ sung.');
+    return;
+  }
+
+  const query = `CREATE TABLE public."${tableName}" (\n  ${columnsSqlParts.join(',\n  ')}\n);`;
+
+  confirmCreateTableBtn.disabled = true;
+  confirmCreateTableBtn.textContent = 'Đang tạo...';
+  createTableStatus.textContent = 'Đang gửi lệnh tạo bảng...';
+
+  try {
+    const { data, error } = await supabaseClient.rpc('exec_sql', { sql: query });
+    
+    if (error) {
+      if (error.message.includes('function rpc.exec_sql does not exist')) {
+        throw new Error("RPC 'exec_sql' chưa được cấu hình trên Supabase. Vui lòng mở SQL Editor trong Supabase và chạy câu lệnh tạo hàm này trước (Xem hướng dẫn trong SQL Editor trên Dashboard này).");
+      }
+      throw error;
+    }
+
+    createTableStatus.className = 'text-xs text-emerald-400';
+    createTableStatus.textContent = 'Tạo bảng thành công! Đang tải lại danh sách...';
+
+    // Wait a brief moment, then refresh list of tables
+    setTimeout(async () => {
+      createTableModal.classList.add('hidden');
+      confirmCreateTableBtn.disabled = false;
+      confirmCreateTableBtn.textContent = 'Tạo bảng';
+      
+      // Re-fetch OpenAPI schema to list tables
+      const restEndpoint = `${currentUrl.replace(/\/$/, '')}/rest/v1/`;
+      const res = await fetch(restEndpoint, {
+        headers: {
+          'apikey': currentKey,
+          'Authorization': `Bearer ${currentKey}`
+        }
+      });
+      if (res.ok) {
+        const spec = await res.json();
+        parseOpenApiSchema(spec);
+        renderTablesList();
+      }
+    }, 1500);
+
+  } catch (err) {
+    createTableStatus.className = 'text-xs text-red-400';
+    createTableStatus.textContent = `Lỗi: ${err.message}`;
+    confirmCreateTableBtn.disabled = false;
+    confirmCreateTableBtn.textContent = 'Tạo bảng';
+  }
+});
