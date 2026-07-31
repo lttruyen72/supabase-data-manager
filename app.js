@@ -619,10 +619,10 @@ async function fetchTableData(tableName) {
     let queryBuilder = supabaseClient.from(tableName).select('*', { count: 'exact' });
 
     if (dataSearchQuery && dataSearchQuery.trim()) {
-      const cleanSearch = dataSearchQuery.trim();
+      const cleanSearch = dataSearchQuery.trim().replace(/"/g, '\\"');
       const stringColumns = columns.filter(c => c.type === 'string');
       if (stringColumns.length > 0) {
-        const orConditions = stringColumns.map(c => `${c.name}.ilike.%${cleanSearch}%`).join(',');
+        const orConditions = stringColumns.map(c => `"${c.name}".ilike."%${cleanSearch}%"`).join(',');
         queryBuilder = queryBuilder.or(orConditions);
       }
     }
