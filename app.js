@@ -9,8 +9,10 @@ let currentPage = 1;
 const pageSize = 15;
 let totalRows = 0;
 let tableSchemaInfo = {}; // Columns, types, primary keys from OpenAPI spec
+let dataSearchQuery = '';
 
 // DOM Elements
+const dataSearchInput = document.getElementById('data-search');
 const connectScreen = document.getElementById('connect-screen');
 const connectForm = document.getElementById('connect-form');
 const sbUrlInput = document.getElementById('sb-url');
@@ -111,6 +113,18 @@ disconnectBtn.addEventListener('click', disconnect);
 tableSearchInput.addEventListener('input', (e) => {
   const query = e.target.value.toLowerCase();
   renderTablesList(query);
+});
+
+let searchTimeout;
+dataSearchInput.addEventListener('input', (e) => {
+  dataSearchQuery = e.target.value;
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    currentPage = 1;
+    if (activeTable) {
+      fetchTableData(activeTable);
+    }
+  }, 400);
 });
 
 refreshTableBtn.addEventListener('click', () => {
@@ -478,6 +492,8 @@ function disconnect() {
   allTables = [];
   activeTable = null;
   tableSchemaInfo = {};
+  dataSearchQuery = '';
+  if (dataSearchInput) dataSearchInput.value = '';
   
   localStorage.removeItem('supabase_url');
   localStorage.removeItem('supabase_key');
@@ -554,6 +570,8 @@ function renderTablesList(filter = '') {
     btn.addEventListener('click', () => {
       activeTable = tableName;
       currentPage = 1;
+      dataSearchQuery = '';
+      if (dataSearchInput) dataSearchInput.value = '';
       // Re-render table list to highlight current selection
       renderTablesList(filter);
       fetchTableData(tableName);
@@ -598,10 +616,18 @@ async function fetchTableData(tableName) {
   const end = start + pageSize - 1;
 
   try {
-    const { data, count, error } = await supabaseClient
-      .from(tableName)
-      .select('*', { count: 'exact' })
-      .range(start, end);
+    let queryBuilder = supabaseClient.from(tableName).select('*', { count: 'exact' });
+
+    if (dataSearchQuery && dataSearchQuery.trim()) {
+      const cleanSearch = dataSearchQuery.trim();
+      const stringColumns = columns.filter(c => c.type === 'string');
+      if (stringColumns.length > 0) {
+        const orConditions = stringColumns.map(c => `${c.name}.ilike.%${cleanSearch}%`).join(',');
+        queryBuilder = queryBuilder.or(orConditions);
+      }
+    }
+
+    const { data, count, error } = await queryBuilder.range(start, end);
 
     if (error) throw error;
 
